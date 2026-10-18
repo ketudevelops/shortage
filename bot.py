@@ -1,29 +1,18 @@
 import asyncio
 import logging
+import os
 import feedparser
 from telegram import Bot
 
-# ==============================================================================
-# CONFIGURATION
-# ==============================================================================
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+# Get secrets from environment variables (configured in GitHub)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-# Check interval set strictly to 30 seconds
-POLL_INTERVAL = 30
-
-# Targeted RSS Feeds
 RSS_FEEDS = [
-    # 1. DGGI, Customs, Raids & Tax Evasion (Assam, Guwahati, Nagaland, Arunachal, Pan India)
     "https://news.google.com/rss/search?q=DGGI+OR+tax+OR+raid+OR+seized+Assam+OR+Guwahati+OR+Nagaland&hl=en-IN&gl=IN&ceid=IN:en",
-    # 2. Major Pan Masala & Gutkha Brands
     "https://news.google.com/rss/search?q=Vimal+OR+Rajnigandha+OR+Pan+Parag+OR+Kamala+Pasand+OR+Shikhar+gutkha&hl=en-IN&gl=IN&ceid=IN:en",
-    # 3. Supari & Areca Nut Smuggling (Northeast Corridors)
     "https://news.google.com/rss/search?q=supari+OR+areca+nut+seized+Assam+OR+Mizoram+OR+Nagaland&hl=en-IN&gl=IN&ceid=IN:en",
-    # 4. GST Council, Cess & Tobacco Policy
-    "https://news.google.com/rss/search?q=GST+Council+tax+hike+tobacco+OR+pan+masala+cess&hl=en-IN&gl=IN&ceid=IN:en",
-    # 5. Cigarette, Zarda & Bidi Enforcement
-    "https://news.google.com/rss/search?q=illegal+cigarettes+OR+bidi+OR+zarda+seized+India&hl=en-IN&gl=IN&ceid=IN:en"
+    "https://news.google.com/rss/search?q=GST+Council+tax+hike+tobacco+OR+pan+masala+cess&hl=en-IN&gl=IN&ceid=IN:en"
 ]
 
 # ==============================================================================
@@ -146,24 +135,32 @@ ALL_MONITORED_KEYWORDS = set([
     "seizure value", "crores seized", "lakhs seized", "enforcement action"
 ])
 
-# Memory set to avoid duplicate alerts
+
+# Read previously seen articles from a local text file cache
+SEEN_FILE = "seen_links.txt"
 seen_articles = set()
+if os.path.exists(SEEN_FILE):
+    with open(SEEN_FILE, "r") as f:
+        seen_articles = set(line.strip() for line in f if line.strip())
 
 def contains_monitored_keyword(text: str) -> bool:
     text_lower = text.lower()
     return any(keyword in text_lower for keyword in ALL_MONITORED_KEYWORDS)
 
-async def poll_feeds(bot: Bot):
+async def check_once():
+    bot = Bot(token=TELEGRAM_TOKEN)
+    new_links = []
+
     for feed_url in RSS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:10]:
+            for entry in feed.entries[:5]:
                 article_url = entry.link
                 
-                # Check if new item and contains any keyword
                 if article_url not in seen_articles:
                     if contains_monitored_keyword(entry.title):
                         seen_articles.add(article_url)
+                        new_links.append(article_url)
                         
                         message = (
                             f"🚨 **LIVE SUPPLY CHAIN / RAID ALERT**\n\n"
@@ -175,36 +172,19 @@ async def poll_feeds(bot: Bot):
                         await bot.send_message(
                             chat_id=CHAT_ID,
                             text=message,
-                            parse_mode="Markdown",
-                            disable_web_page_preview=False
+                            parse_mode="Markdown"
                         )
                         print(f"[SENT]: {entry.title}")
                     else:
-                        # Silently record seen non-matching link to save memory
                         seen_articles.add(article_url)
+                        new_links.append(article_url)
         except Exception as e:
-            # Silent fallback on network issues
-            pass
+            print(f"Error: {e}")
 
-async def main():
-    bot = Bot(token=TELEGRAM_TOKEN)
-    print(f"Monitoring active ({len(ALL_MONITORED_KEYWORDS)} keywords). Polling every 30 seconds...")
-    
-    # Pre-fill seen_articles on startup so old news isn't sent instantly
-    for feed_url in RSS_FEEDS:
-        try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries:
-                seen_articles.add(entry.link)
-        except Exception:
-            pass
-
-    print("Startup cache ready. Watching for live breaking updates...")
-
-    while True:
-        await poll_feeds(bot)
-        await asyncio.sleep(POLL_INTERVAL)
+    # Save new links to file
+    with open(SEEN_FILE, "a") as f:
+        for link in new_links:
+            f.write(f"{link}\n")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.ERROR)
-    asyncio.run(main())
+    asyncio.run(check_once())
