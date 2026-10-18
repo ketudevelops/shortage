@@ -1,0 +1,28 @@
+name: Run Telegram News Bot
+
+on:
+  schedule:
+    # Runs automatically every 5 minutes 24/7
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows running manually anytime
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install python-telegram-bot feedparser
+
+      - name: Execute Script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python bot.py
