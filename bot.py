@@ -1,12 +1,19 @@
 import asyncio
 import logging
 import os
+import time
+from datetime import datetime, timezone, timedelta
 import feedparser
 from telegram import Bot
 
-# Get secrets from environment variables (configured in GitHub)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+
+# Maximum age of news articles to process (e.g., last 15 minutes)
+MAX_AGE_MINUTES = 15
+
+# Define Indian Standard Timezone (UTC +5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 
 RSS_FEEDS = [
     "https://news.google.com/rss/search?q=DGGI+OR+tax+OR+raid+OR+seized+Assam+OR+Guwahati+OR+Nagaland&hl=en-IN&gl=IN&ceid=IN:en",
@@ -15,9 +22,6 @@ RSS_FEEDS = [
     "https://news.google.com/rss/search?q=GST+Council+tax+hike+tobacco+OR+pan+masala+cess&hl=en-IN&gl=IN&ceid=IN:en"
 ]
 
-# ==============================================================================
-# 500+ KEYWORD DATABASE
-# ==============================================================================
 ALL_MONITORED_KEYWORDS = set([
     # 1. MAJOR PAN MASALA & GUTKHA BRANDS
     "vimal", "rajnigandha", "pan parag", "rmd", "manikchand", "kamala pasand", 
@@ -135,35 +139,37 @@ ALL_MONITORED_KEYWORDS = set([
     "seizure value", "crores seized", "lakhs seized", "enforcement action"
 ])
 
-
-# Read previously seen articles from a local text file cache
-SEEN_FILE = "seen_links.txt"
-seen_articles = set()
-if os.path.exists(SEEN_FILE):
-    with open(SEEN_FILE, "r") as f:
-        seen_articles = set(line.strip() for line in f if line.strip())
-
 def contains_monitored_keyword(text: str) -> bool:
     text_lower = text.lower()
     return any(keyword in text_lower for keyword in ALL_MONITORED_KEYWORDS)
 
+def is_recent(published_parsed) -> bool:
+    if not published_parsed:
+        return True  # Fallback if no parsed date tag exists
+    
+    # Convert feed struct time to epoch timestamp
+    pub_time = time.mktime(published_parsed)
+    now_time = time.time()
+    
+    # Only keep articles published within the last MAX_AGE_MINUTES
+    return (now_time - pub_time) <= (MAX_AGE_MINUTES * 60)
+
 async def check_once():
     bot = Bot(token=TELEGRAM_TOKEN)
-    new_links = []
+    sent_count = 0
+    now_ist_str = datetime.now(IST).strftime("%I:%M %p IST (%d %b %Y)")
 
     for feed_url in RSS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
             for entry in feed.entries[:5]:
-                article_url = entry.link
-                
-                if article_url not in seen_articles:
+                # 1. Filter out old news using publication timestamp
+                if is_recent(entry.get("published_parsed")):
+                    # 2. Check keyword relevance
                     if contains_monitored_keyword(entry.title):
-                        seen_articles.add(article_url)
-                        new_links.append(article_url)
-                        
                         message = (
-                            f"🚨 **LIVE SUPPLY CHAIN / RAID ALERT**\n\n"
+                            f"🚨 **LIVE SUPPLY CHAIN / RAID ALERT**\n"
+                            f"⏰ **Alert Time:** {now_ist_str}\n\n"
                             f"**Headline:** {entry.title}\n"
                             f"**Published:** {entry.get('published', 'Just Now')}\n\n"
                             f"🔗 [Source Link]({entry.link})"
@@ -174,17 +180,23 @@ async def check_once():
                             text=message,
                             parse_mode="Markdown"
                         )
-                        print(f"[SENT]: {entry.title}")
-                    else:
-                        seen_articles.add(article_url)
-                        new_links.append(article_url)
+                        sent_count += 1
+                        print(f"[SENT ALERT]: {entry.title}")
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"[ERROR]: {e}")
 
-    # Save new links to file
-    with open(SEEN_FILE, "a") as f:
-        for link in new_links:
-            f.write(f"{link}\n")
+    # 3. Heartbeat status message formatted strictly in Indian Standard Time (IST)
+    if sent_count == 0:
+        no_news_msg = (
+            f"ℹ️ **Status Update ({now_ist_str}):**\n"
+            f"Scanned feeds successfully. No new raid or tax news detected in the last {MAX_AGE_MINUTES} minutes."
+        )
+        await bot.send_message(
+            chat_id=CHAT_ID,
+            text=no_news_msg,
+            parse_mode="Markdown"
+        )
+        print("[STATUS SENT]: No new news found.")
 
 if __name__ == "__main__":
     asyncio.run(check_once())
