@@ -61,7 +61,7 @@ ALL_MONITORED_KEYWORDS = set([
     "gagan", "gagan pan masala", "kuber", "kuber gutkha", "golden 17", 
     "ratna 300", "meetha mazaa", "gulab", "dilruba", "shahi gulab", "hans", 
     "hans chhap", "vimal bola", "shikhar premium", "cool lip", "gold mohar", 
-    "swagat", "karamchand", "siggnature" , "action zarda" , "xgold" , "tara" , "dildaar"
+    "swagat", "karamchand", "siggnature" , "action zarda" , "xgold" , "tara" , "dildaar" ,
 
     # 2. TOBACCO, ZARDA, KHAINI & SMOKELESS PRODUCTS
     "baba zarda", "tulsi zarda", "120 zarda", "160 zarda", "zafrani zarda", 
