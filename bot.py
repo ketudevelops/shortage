@@ -218,8 +218,8 @@ async def check_once():
     # 3. Heartbeat status message in IST
     if sent_count == 0:
         no_news_msg = (
-            f"ℹ️ **Status Update ({now_ist_str}):**\n"
-            f"Scanned feeds successfully. No new raid, tax, transport, or promoter news detected in the last {MAX_AGE_MINUTES} minutes."
+            
+            f"."
         )
         await bot.send_message(
             chat_id=CHAT_ID,
